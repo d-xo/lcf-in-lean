@@ -1,3 +1,5 @@
+import Mathlib.Data.Finset.Basic
+
 namespace LCF
 
 -- Sentences in Propositional Logic
@@ -9,7 +11,7 @@ inductive Term where
 | Or (l : Term) (r : Term)
 | Neg (t : Term)
 | Impl (l : Term) (r : Term)
-deriving BEq, Repr
+deriving BEq, DecidableEq, Repr
 
 structure Theorem where
   hypotheses : List Term
@@ -42,6 +44,12 @@ def subst (nm : String) (t : Term) : (target : Term) → Term
 def and_intro (l : Theorem) (r : Theorem) : Theorem :=
   ⟨l.hypotheses ++ r.hypotheses, .And l.conclusion r.conclusion⟩
 
+def or_intro_l (l : Theorem) (t : Term) : Theorem :=
+  ⟨l.hypotheses, Term.Or l.conclusion t⟩
+
+def or_intro_r (r : Theorem) (t : Term) : Theorem :=
+  ⟨r.hypotheses, Term.Or t r.conclusion⟩
+
 def true : Theorem := ⟨[], Term.True⟩
 def assume (t : Term) : Theorem := ⟨[t], t⟩
 
@@ -56,6 +64,13 @@ def and_elim_l (t : Theorem) : Option Theorem :=
   match t.conclusion with
   | .And l _ => pure ⟨t.hypotheses, l⟩
   | _ => none
+
+def or_elim : (disjunct : Theorem) → (l_impl : Theorem) → (r_impl : Theorem) → Option Theorem
+  | ⟨d_hs, .Or l r⟩, ⟨l_hs, lgl⟩, ⟨r_hs, rgl⟩ =>
+    if lgl != rgl || List.getLast? l_hs != some l || List.getLast? r_hs != some r
+    then none
+    else pure ⟨d_hs ++ List.dropLast l_hs ++ List.dropLast r_hs, lgl⟩
+  | _, _, _ => none
 
 def and_elim_r (t : Theorem) : Option Theorem :=
   match t.conclusion with
@@ -76,6 +91,15 @@ def instantiate (var : String) (t : Term) (thm : Theorem) : Option Theorem :=
   if List.any thm.hypotheses (occurs_free var)
   then none
   else pure ⟨thm.hypotheses, subst var t thm.conclusion⟩
+
+-- Structural --
+
+def structural (thm : Theorem) (reordered : List Term) : Option Theorem :=
+  if List.toFinset thm.hypotheses ⊆ List.toFinset reordered
+  then pure ⟨reordered, thm.conclusion⟩
+  else none
+
+-- Proofs --
 
 -- p -> p ∎
 #eval (discharge (.Var "p") $ assume (.Var "p"))
