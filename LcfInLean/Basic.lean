@@ -9,13 +9,48 @@ inductive Term where
 | Or (l : Term) (r : Term)
 | Neg (t : Term)
 | Impl (l : Term) (r : Term)
+deriving BEq, Repr
 
 structure Theorem where
   hypotheses : List Term
   conclusion : Term
+deriving Repr
+
+-- Utils --
+
+def occurs_free (nm : String) : (t : Term) → Bool
+| .Var s => s == nm
+| .True => False
+| .False => False
+| .And l r => occurs_free nm l || occurs_free nm r
+| .Or l r => occurs_free nm l || occurs_free nm r
+| .Neg t => occurs_free nm t
+| .Impl l r => occurs_free nm l || occurs_free nm r
+
+-- Invariant: nm must not be free in t
+def subst (nm : String) (t : Term) : (target : Term) → Term
+| .Var s => if s == nm then t else .Var s
+| .True => .True
+| .False => .False
+| .And l r => .And (subst nm t l) (subst nm t r)
+| .Or l r => .Or (subst nm t l) (subst nm t r)
+| .Neg t' => .Neg (subst nm t t')
+| .Impl l r => .Impl (subst nm t l) (subst nm t r)
+
+-- Introduction Rules --
 
 def and_intro (l : Theorem) (r : Theorem) : Theorem :=
   ⟨l.hypotheses ++ r.hypotheses, .And l.conclusion r.conclusion⟩
+
+def true : Theorem := ⟨[], Term.True⟩
+def assume (t : Term) : Theorem := ⟨[t], t⟩
+
+def discharge (a : Term) (thm : Theorem) : Theorem :=
+  ⟨List.filter (λ h => h != a) thm.hypotheses
+  , Term.Impl a thm.conclusion
+  ⟩
+
+-- Elimination Rules --
 
 def and_elim_l (t : Theorem) : Option Theorem :=
   match t.conclusion with
@@ -27,5 +62,22 @@ def and_elim_r (t : Theorem) : Option Theorem :=
   | .And _ r => pure ⟨t.hypotheses, r⟩
   | _ => none
 
+def modus_ponens (imp : Theorem) (l : Theorem) : Option Theorem:=
+  match imp.conclusion with
+  | Term.Impl lhs rhs =>
+    if l.conclusion != lhs
+    then none
+    else pure ⟨imp.hypotheses ++ l.hypotheses, rhs⟩
+  | _ => none
+
+-- Instantiation --
+
+def instantiate (var : String) (t : Term) (thm : Theorem) : Option Theorem :=
+  if List.any thm.hypotheses (occurs_free var)
+  then none
+  else pure ⟨thm.hypotheses, subst var t thm.conclusion⟩
+
+-- p -> p ∎
+#eval (discharge (.Var "p") $ assume (.Var "p"))
 
 end LCF
