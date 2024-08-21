@@ -14,6 +14,7 @@ inductive Term where
 deriving BEq, DecidableEq, Repr
 
 structure Theorem where
+  -- NOTE: the head of this list is the last element of the hypotheses
   hypotheses : List Term
   conclusion : Term
 deriving Repr
@@ -66,10 +67,10 @@ def and_elim_l (t : Theorem) : Option Theorem :=
   | _ => none
 
 def or_elim : (disjunct : Theorem) → (l_impl : Theorem) → (r_impl : Theorem) → Option Theorem
-  | ⟨d_hs, .Or l r⟩, ⟨l_hs, lgl⟩, ⟨r_hs, rgl⟩ =>
-    if lgl != rgl || List.getLast? l_hs != some l || List.getLast? r_hs != some r
+  | ⟨d_hs, .Or l r⟩, ⟨l_lst :: l_hs, lgl⟩, ⟨r_lst :: r_hs, rgl⟩ =>
+    if lgl != rgl || l_lst != l || r_lst != r
     then none
-    else pure ⟨d_hs ++ List.dropLast l_hs ++ List.dropLast r_hs, lgl⟩
+    else pure ⟨d_hs ++ l_hs ++ r_hs, lgl⟩
   | _, _, _ => none
 
 def and_elim_r (t : Theorem) : Option Theorem :=
@@ -94,14 +95,44 @@ def instantiate (var : String) (t : Term) (thm : Theorem) : Option Theorem :=
 
 -- Structural --
 
+-- This applies all structural rules at once
 def structural (thm : Theorem) (reordered : List Term) : Option Theorem :=
   if List.toFinset thm.hypotheses ⊆ List.toFinset reordered
   then pure ⟨reordered, thm.conclusion⟩
   else none
 
+-- the following are meta proofs that the above covers all structural rules,
+-- carried out by implementing the individual rules in terms of the above
+
+theorem contraction (t : Term) (ts : List Term) (gl : Term)
+  : structural ⟨t :: t :: ts, gl⟩ (t :: ts) = some ⟨t :: ts, gl⟩ := by
+    unfold structural
+    simp
+
+theorem weakening (t : Term) (hyps : List Term) (gl : Term)
+  : structural ⟨hyps, gl⟩ (t :: hyps) = some ⟨t :: hyps, gl⟩ := by
+    unfold structural
+    simp
+
+theorem exchange (Γ₁ : List Term) (A : Term) (Γ₂ : List Term) (B : Term) (Γ₃ : List Term) (gl : Term)
+  : structural ⟨Γ₁ ++ [A] ++ Γ₂ ++ [B] ++ Γ₃, gl⟩ (Γ₁ ++ [B] ++ Γ₂ ++ [A] ++ Γ₃)
+  = some ⟨Γ₁ ++ [B] ++ Γ₂ ++ [A] ++ Γ₃, gl⟩ := by
+    unfold structural
+    have : insert A (insert B (Γ₁.toFinset ∪ (Γ₂.toFinset ∪ Γ₃.toFinset))) = insert B (insert A (Γ₁.toFinset ∪ (Γ₂.toFinset ∪ Γ₃.toFinset))) := by aesop
+    aesop
+
+/-
+ - TODO: prove that structural only does contraction, weakening, and exchange:
+ -   - to state the theorem we would wanna state the above as relations and then the theorem would state that if the structural relation holds then there is a chain of the other relations that holds transitively
+     - to prove we would define a routine that applies all structural rules until no more can be applied (notice that exchange makes this rewrite system confluent):
+     - prove that if the subset condition in structural holds then our routine always finds a chain
+ -/
+
 -- Proofs --
 
 -- p -> p ∎
 #eval (discharge (.Var "p") $ assume (.Var "p"))
+
+-- TODO: prove some de morgans stuff
 
 end LCF
